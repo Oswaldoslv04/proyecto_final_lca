@@ -1,112 +1,178 @@
-# Data Science Project Boilerplate
+# Offered Annual Wage Prediction LCA
 
-This boilerplate is designed to kickstart data science projects by providing a basic setup for database connections, data processing, and machine learning model development. It includes a structured folder organization for your datasets and a set of pre-defined Python packages necessary for most data science tasks.
+Final Data Science project focused on building a Machine Learning model to estimate the **average offered annual wage** in **LCA** labor certification applications.
 
-## Structure
+The project uses historical labor certification data, wage variables, job location, occupational classification, economic sector, and administrative features to train a regression model.
 
-The project is organized as follows:
+## Project objective
 
-- **`src/app.py`** → Main Python script where your project will run.
-- **`src/explore.ipynb`** → Notebook for exploration and testing. Once exploration is complete, migrate the clean code to `app.py`.
-- **`src/utils.py`** → Auxiliary functions, such as database connection.
-- **`requirements.txt`** → List of required Python packages.
-- **`models/`** → Will contain your SQLAlchemy model classes.
-- **`data/`** → Stores datasets at different stages:
-  - **`data/raw/`** → Raw data.
-  - **`data/interim/`** → Temporarily transformed data.
-  - **`data/processed/`** → Data ready for analysis.
+The main objective is to predict the target variable:
 
+```text
+offered_anual_avg_wage
+```
 
-## ⚡ Initial Setup in Codespaces (Recommended)
+This variable represents the average offered annual wage. Since it is a continuous numerical variable, the project is handled as a **supervised regression** problem.
 
-No manual setup is required, as **Codespaces is automatically configured** with the predefined files created by the academy for you. Just follow these steps:
+## Final dataset
 
-1. **Wait for the environment to configure automatically**.
-   - All necessary packages and the database will install themselves.
-   - The automatically created `username` and `db_name` are in the **`.env`** file at the root of the project.
-2. **Once Codespaces is ready, you can start working immediately**.
+The final dataset used for the model contains approximately:
 
+```text
+979,113 rows
+20 total columns
+19 predictive variables
+1 target variable
+```
 
-## 💻 Local Setup (Only if you can't use Codespaces)
+The general data type structure is:
 
-**Prerequisites**
+```text
+category: 13 columns
+float64: 4 columns
+int64: 3 columns
+```
 
-Make sure you have Python 3.11+ installed on your machine. You will also need pip to install the Python packages.
+The target variable is:
 
-**Installation**
+```text
+offered_anual_avg_wage
+```
 
-Clone the project repository to your local machine.
+The predictive variables include features such as:
 
-Navigate to the project directory and install the required Python packages:
+- VISA_CLASS
+- FULL_TIME_POSITION
+- NEW_EMPLOYMENT
+- EMPLOYER_STATE
+- NAICS_CODE
+- WORKSITE_WORKERS
+- SECONDARY_ENTITY
+- WORKSITE_CITY
+- WORKSITE_STATE
+- PREVAILING_WAGE
+- PW_WAGE_LEVEL
+- TOTAL_WORKSITE_LOCATIONS
+- H_1B_DEPENDENT
+- WILLFUL_VIOLATOR
+- pw_oes_period_group
+- soc_code_grouped
+- received_year
+- process_duration_days
+- employment_duration_days
+
+## Workflow
+
+1. **Problem definition**  
+   A regression problem was defined to estimate offered annual wages in LCA labor applications.
+
+2. **Data loading and filtering**  
+   A historical labor application dataset was used, selecting the most relevant variables for the final model.
+
+3. **Data cleaning and transformation**  
+   Categorical variables were normalized, date columns were transformed, and derived features such as process duration and employment duration were created.
+
+4. **Binary variable normalization**  
+   The columns `FULL_TIME_POSITION`, `SECONDARY_ENTITY`, `WILLFUL_VIOLATOR`, and `H_1B_DEPENDENT` were normalized to `N` and `Y` values.
+
+5. **Model training**  
+   A regression model was trained using libraries such as `scikit-learn`, `xgboost`, and `optuna`.
+
+6. **Model evaluation**  
+   Model performance was evaluated using regression metrics such as MAE, RMSE, and R².
+
+7. **Model serialization**  
+   The final model was saved using `pickle` and compressed with `gzip` in `.pkl.gz` format.
+
+8. **Streamlit deployment**  
+   A Streamlit web application was developed to load the model and generate predictions through an interactive interface.
+
+## Local installation
+
+Clone the repository and install the dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-**Create a database (if necessary)**
+## Running the notebook
 
-Create a new database within the Postgres engine by customizing and executing the following command:
+The main exploration and modeling notebook is located at:
+
+```text
+src/PROYECTO_FINAL_LCA_DISCLOSURE.ipynb
+```
+
+This notebook contains the data analysis, preprocessing, model training, evaluation, and model export steps.
+
+## Running the Streamlit app
+
+From the project root, run:
 
 ```bash
-$ psql -U postgres -c "DO \$\$ BEGIN 
-    CREATE USER my_user WITH PASSWORD 'my_password'; 
-    CREATE DATABASE my_database OWNER my_user; 
-END \$\$;"
+streamlit run app.py
 ```
-Connect to the Postgres engine to use your database, manipulate tables, and data:
+
+If `app.py` is inside `src/`, run:
 
 ```bash
-$ psql -U my_user -d my_database
+streamlit run src/app.py
 ```
 
-Once inside PSQL, you can create tables, run queries, insert, update, or delete data, and much more!
+## Deployment on Render
 
-**Environment Variables**
+Recommended Render configuration:
 
-Create a .env file in the root directory of the project to store your environment variables, such as your database connection string:
-
-```makefile
-DATABASE_URL="postgresql://<USER>:<PASSWORD>@<HOST>:<PORT>/<DB_NAME>"
-
-#example
-DATABASE_URL="postgresql://my_user:my_password@localhost:5432/my_database"
-```
-
-## Running the Application
-
-To run the application, execute the app.py script from the root directory of the project:
+**Build Command**
 
 ```bash
-python src/app.py
+pip install -r requirements_render.txt
 ```
 
-## Adding Models
+**Start Command**
 
-To add SQLAlchemy model classes, create new Python script files within the models/ directory. These classes should be defined according to your database schema.
-
-Example model definition (`models/example_model.py`):
-
-```py
-from sqlalchemy.orm import declarative_base
-from sqlalchemy import String
-from sqlalchemy.orm import Mapped, mapped_column
-
-Base = declarative_base()
-
-class ExampleModel(Base):
-    __tablename__ = 'example_table'
-    id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(unique=True)
+```bash
+streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
 ```
 
-## Working with Data
+If the file is inside `src/`, use:
 
-You can place your raw datasets in the data/raw directory, intermediate datasets in data/interim, and processed datasets ready for analysis in data/processed.
+```bash
+streamlit run src/app.py --server.port=$PORT --server.address=0.0.0.0
+```
 
-To process data, you can modify the app.py script to include your data processing steps, using pandas for data manipulation and analysis.
+## Main dependencies
 
-## Contributors
+The project mainly uses:
 
-This template was built as part of the [Data Science and Machine Learning Bootcamp](https://4geeksacademy.com/us/coding-bootcamps/datascience-machine-learning) by 4Geeks Academy by [Alejandro Sanchez](https://twitter.com/alesanchezr) and many other contributors. Learn more about [4Geeks Academy BootCamp programs](https://4geeksacademy.com/us/programs) here.
+```text
+pandas
+numpy
+plotly
+xgboost
+optuna
+scikit-learn
+streamlit
+```
 
-Other templates and resources like this can be found on the school's GitHub page.
+The libraries `pickle`, `gzip`, `re`, and `pathlib` are not included in `requirements.txt` because they are part of Python's standard library.
+
+## Important files
+
+- `app.py`: Streamlit prediction application.
+- `src/explore.ipynb`: main analysis and modeling notebook.
+- `models/model.pkl.gz`: final trained and compressed model.
+- `data/processed/df_final.csv`: final processed dataset.
+- `data/app_options.json`: optional file to load real categorical values into the app.
+- `requirements_render.txt`: render dependencies.
+- `requirements.txt`: project dependencies.
+
+## Model disclaimer
+
+Predictions generated by this application should be interpreted as approximate estimates. The model was trained on historical data and may produce errors when receiving outliers, uncommon combinations, or scenarios different from those observed during training.
+
+This project is intended for academic and analytical purposes only. It does not constitute financial, legal, labor, or immigration advice.
+
+## Authors
+
+Project developed by **Oswaldo S** and **Luis H** as part of the **4Geeks Academy Latam PT Data Science cohort `latam-pt-ds-21`**.

@@ -1,15 +1,24 @@
 {
   "title": {
-    "en": "Machine Learning Python Template",
-    "es": "Plantilla para Aprendizaje de Máquina con Python"
+    "en": "Offered Annual Wage Prediction LCA",
+    "es": "Predicción de Salario Anual Ofrecido LCA"
   },
   "description": {
-    "us": "A standardized, but flexible project structure for doing and sharing data science and machine learning work.",
-    "es": "Una estructura de proyecto estandarizada, pero flexible, para realizar y compartir trabajos de ciencia de datos y aprendizaje de máquina."
+    "us": "A data science project that trains and deploys a regression model to estimate offered annual wages in LCA labor applications.",
+    "es": "Proyecto de ciencia de datos que entrena y despliega un modelo de regresión para estimar salarios anuales ofrecidos en solicitudes laborales LCA."
   },
-  "repository": "https://github.com/4GeeksAcademy/machine-learning-python-template",
-  "preview": "https://github.com/4GeeksAcademy/machine-learning-python-template/blob/main/preview.jpg?raw=true",
-  "projectType": "template",
-  "difficulty": "beginner",
-  "technologies": ["Python", "Machine-Learning", "Datascience", "ai-engineering"]
+  "repository": "",
+  "preview": "",
+  "projectType": "final-project",
+  "difficulty": "intermediate",
+  "technologies": [
+    "Python",
+    "Pandas",
+    "Scikit-learn",
+    "XGBoost",
+    "Optuna",
+    "Streamlit",
+    "Machine-Learning",
+    "Data-Science"
+  ]
 }

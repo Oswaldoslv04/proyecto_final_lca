@@ -1,112 +1,173 @@
-# Plantilla de Proyecto de Ciencia de Datos
+# Predicción de Salario Anual Ofrecido LCA
 
-Esta plantilla está diseñada para impulsar proyectos de ciencia de datos proporcionando una configuración básica para conexiones de base de datos, procesamiento de datos, y desarrollo de modelos de aprendizaje automático. Incluye una organización estructurada de carpetas para tus conjuntos de datos y un conjunto de paquetes de Python predefinidos necesarios para la mayoría de las tareas de ciencia de datos.
+Proyecto final de Ciencia de Datos enfocado en la construcción de un modelo de Machine Learning capaz de estimar el **salario anual promedio ofrecido** en solicitudes laborales tipo **LCA**.
 
-## Estructura
+El proyecto utiliza datos históricos de certificaciones laborales, variables salariales, ubicación del empleo, clasificación ocupacional, sector económico y características administrativas de la solicitud para entrenar un modelo de regresión.
 
-El proyecto está organizado de la siguiente manera:
+## Objetivo del proyecto
 
-- **`src/app.py`** → Script principal de Python donde correrá tu proyecto.
-- **`src/explore.ipynb`** → Notebook para exploración y pruebas. Una vez finalizada la exploración, migra el código limpio a `app.py`.
-- **`src/utils.py`** → Funciones auxiliares, como conexión a bases de datos.
-- **`requirements.txt`** → Lista de paquetes de Python necesarios.
-- **`models/`** → Contendrá tus clases de modelos SQLAlchemy.
-- **`data/`** → Almacena los datasets en diferentes etapas:
-  - **`data/raw/`** → Datos sin procesar.
-  - **`data/interim/`** → Datos transformados temporalmente.
-  - **`data/processed/`** → Datos listos para análisis.
+El objetivo principal es predecir la variable:
 
+```text
+offered_anual_avg_wage
+```
 
-## ⚡ Configuración Inicial en Codespaces (Recomendado)
+Esta variable representa el salario anual promedio ofrecido. Al tratarse de una variable numérica continua, el problema se aborda como un caso de **regresión supervisada**.
 
-No es necesario realizar ninguna configuración manual, ya que **Codespaces se configura automáticamente** con los archivos predefinidos que ha creado la academia para ti. Simplemente sigue estos pasos:
+## Dataset final
 
-1. **Espera a que el entorno se configure automáticamente**.
-   - Todos los paquetes necesarios y la base de datos se instalarán por sí mismos.
-   - El `username` y `db_name` creados automáticamente están en el archivo **`.env`** en la raíz del proyecto.
-2. **Una vez que Codespaces esté listo, puedes comenzar a trabajar inmediatamente**.
+El dataset final utilizado para el modelo contiene aproximadamente:
 
+```text
+979.113 registros
+20 columnas totales
+19 variables predictoras
+1 variable objetivo
+```
 
-## 💻 Configuración en Local (Solo si no puedes usar Codespaces)
+La estructura general de tipos de datos es:
 
-**Prerrequisitos**
+```text
+category: 13 columnas
+float64: 4 columnas
+int64: 3 columnas
+```
 
-Asegúrate de tener Python 3.11+ instalado en tu máquina. También necesitarás pip para instalar los paquetes de Python.
+La variable objetivo es:
 
-**Instalación**
+```text
+offered_anual_avg_wage
+```
 
-Clona el repositorio del proyecto en tu máquina local.
+Entre las variables predictoras se incluyen características como:
 
-Navega hasta el directorio del proyecto e instala los paquetes de Python requeridos:
+- clase de visa;
+- posición full-time;
+- estado del empleador;
+- código NAICS;
+- cantidad de trabajadores en el lugar de trabajo;
+- ciudad y estado del lugar de trabajo;
+- salario prevaleciente;
+- nivel salarial;
+- dependencia H-1B;
+- historial de infractor intencional;
+- grupo SOC de ocupación;
+- año de recepción;
+- duración del trámite;
+- duración del empleo.
+
+## Flujo de trabajo realizado
+
+1. **Definición del problema**  
+   Se planteó un problema de regresión para estimar salarios anuales ofrecidos en solicitudes laborales H-1B / LCA.
+
+2. **Carga y filtrado de datos**  
+   Se trabajó con un dataset histórico de solicitudes laborales, seleccionando variables relevantes para el modelo final.
+
+3. **Limpieza y transformación**  
+   Se normalizaron variables categóricas, se transformaron fechas y se generaron variables derivadas como duración del trámite y duración del empleo.
+
+4. **Normalización de variables binarias**  
+   Las columnas `FULL_TIME_POSITION`, `SECONDARY_ENTITY`, `WILLFUL_VIOLATOR` y `H_1B_DEPENDENT` fueron normalizadas a los valores `N` y `Y`.
+
+5. **Entrenamiento del modelo**  
+   Se entrenó un modelo de regresión utilizando librerías como `scikit-learn`, `xgboost` y `optuna`.
+
+6. **Evaluación del modelo**  
+   Se evaluó el rendimiento usando métricas de regresión como MAE, RMSE y R².
+
+7. **Serialización del modelo**  
+   El modelo final fue guardado con `pickle` y comprimido con `gzip` en formato `.pkl.gz`.
+
+8. **Despliegue con Streamlit**  
+   Se desarrolló una aplicación web en Streamlit para cargar el modelo y generar predicciones desde una interfaz interactiva.
+
+## Instalación local
+
+Clona el repositorio e instala las dependencias:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-**Crear una base de datos (si es necesario)**
+## Ejecución del notebook
 
-Crea una nueva base de datos dentro del motor Postgres personalizando y ejecutando el siguiente comando: 
+El notebook principal de exploración y modelado se encuentra en:
+
+```text
+src/PROYECTO_FINAL_LCA_DISCLOSURE.ipynb
+```
+
+Desde ahí se realiza el análisis, preparación de datos, entrenamiento, evaluación y guardado del modelo.
+
+## Ejecución de la aplicación Streamlit
+
+Desde la raíz del proyecto, ejecuta:
 
 ```bash
-$ psql -U postgres -c "DO \$\$ BEGIN 
-    CREATE USER mi_usuario WITH PASSWORD 'mi_contraseña'; 
-    CREATE DATABASE mi_base_de_datos OWNER mi_usuario; 
-END \$\$;"
+streamlit run app.py
 ```
-Conéctate al motor Postgres para usar tu base de datos, manipular tablas y datos: 
+
+Si `app.py` está dentro de `src/`, usa:
 
 ```bash
-$ psql -U mi_usuario -d mi_base_de_datos
+streamlit run src/app.py
 ```
 
-¡Una vez que estés dentro de PSQL podrás crear tablas, hacer consultas, insertar, actualizar o eliminar datos y mucho más!
+## Despliegue en Render
 
-**Variables de entorno**
+Para desplegar en Render se recomienda usar:
 
-Crea un archivo .env en el directorio raíz del proyecto para almacenar tus variables de entorno, como tu cadena de conexión a la base de datos:
-
-```makefile
-DATABASE_URL="postgresql://<USUARIO>:<CONTRASEÑA>@<HOST>:<PUERTO>/<NOMBRE_BD>"
-
-#example
-DATABASE_URL="postgresql://mi_usuario:mi_contraseña@localhost:5432/mi_base_de_datos"
-```
-
-## Ejecutando la Aplicación
-
-Para ejecutar la aplicación, ejecuta el script app.py desde la raíz del directorio del proyecto:
+**Build Command**
 
 ```bash
-python src/app.py
+pip install -r requirements_render.txt
 ```
 
-## Añadiendo Modelos
+**Start Command**
 
-Para añadir clases de modelos SQLAlchemy, crea nuevos archivos de script de Python dentro del directorio models/. Estas clases deben ser definidas de acuerdo a tu esquema de base de datos.
-
-Definición del modelo de ejemplo (`models/example_model.py`):
-
-```py
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import String
-from sqlalchemy.orm import Mapped, mapped_column
-
-Base = declarative_base()
-
-class ExampleModel(Base):
-    __tablename__ = 'example_table'
-    id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(unique=True)
+```bash
+streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
 ```
 
-## Trabajando con Datos
+Si el archivo está dentro de `src/`, el comando debe ser:
 
-Puedes colocar tus conjuntos de datos brutos en el directorio data/raw, conjuntos de datos intermedios en data/interim, y los conjuntos de datos procesados listos para el análisis en data/processed.
+```bash
+streamlit run src/app.py --server.port=$PORT --server.address=0.0.0.0
+```
 
-Para procesar datos, puedes modificar el script app.py para incluir tus pasos de procesamiento de datos, utilizando pandas para la manipulación y análisis de datos.
+## Dependencias principales
 
-## Contribuyentes
+El proyecto utiliza principalmente:
 
-Esta plantilla fue construida como parte del [Data Science and Machine Learning Bootcamp](https://4geeksacademy.com/us/coding-bootcamps/datascience-machine-learning) de 4Geeks Academy por [Alejandro Sanchez](https://twitter.com/alesanchezr) y muchos otros contribuyentes. Descubre más sobre [los programas BootCamp de 4Geeks Academy](https://4geeksacademy.com/us/programs) aquí.
+```text
+pandas
+numpy
+plotly
+xgboost
+optuna
+scikit-learn
+streamlit
+```
 
-Otras plantillas y recursos como este se pueden encontrar en la página de GitHub de la escuela.
+Las librerías `pickle`, `gzip`, `re` y `pathlib` no se agregan a `requirements.txt` porque forman parte de la librería estándar de Python.
+
+## Archivos importantes
+
+- `app.py`: aplicación Streamlit para predicción.
+- `src/explore.ipynb`: notebook principal de análisis y modelado.
+- `models/model.pkl.gz`: modelo final entrenado y comprimido.
+- `data/processed/df_final.csv`: dataset final procesado.
+- `data/app_options.json`: archivo opcional para cargar categorías reales en la app.
+- `requirements_render.txt`: dependencias necesarias para ejecutar Render.
+- `requirements.txt`: dependencias necesarias del proyecto.
+
+## Nota sobre el modelo
+
+Las predicciones entregadas por esta aplicación deben interpretarse como estimaciones aproximadas. El modelo fue entrenado con datos históricos y puede presentar errores ante valores atípicos, combinaciones poco frecuentes o escenarios distintos a los observados durante el entrenamiento.
+
+Este proyecto tiene fines académicos y analíticos. No constituye asesoría financiera, legal, laboral ni migratoria.
+
+## Autores
+
+Proyecto desarrollado por **Oswaldo S.** y **Luis H.** como parte de la clase **4Geeks Academy Latam PT Data Science `latam-pt-ds-21`**.
