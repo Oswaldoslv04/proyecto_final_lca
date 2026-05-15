@@ -67,7 +67,7 @@ state_options = [
     "VT", "PR", "GU", "VI", "MP", "Other"
 ]
 
-pw_wage_level_options = ["I", "II", "III", "IV"]
+pw_wage_level_options = ["Junior", "Intermedio", "Avanzado", "Experto"]
 
 pw_oes_period_options = [
     "2018-2019",
