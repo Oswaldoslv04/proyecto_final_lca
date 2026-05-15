@@ -1,388 +1,501 @@
-from pathlib import Path
-import pickle
-import random
-from datetime import date, timedelta
-
-import numpy as np
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import pickle
+import gzip
+import os
+import random
+
 
 # ============================================================
-# CONFIGURACIÓN GENERAL
+# CONFIGURACIÓN GENERAL DE LA APP
 # ============================================================
+
 st.set_page_config(
-    page_title="Predicción de salario H-1B / LCA",
+    page_title="Predicción de Salario Anual H-1B",
     page_icon="💼",
-    layout="centered"
+    layout="wide"
 )
 
-TARGET = "offered_anual_avg_wage"
-
-FEATURE_COLUMNS = [
-    "RECEIVED_DATE",
-    "VISA_CLASS",
-    "FULL_TIME_POSITION",
-    "BEGIN_DATE",
-    "END_DATE",
-    "NEW_EMPLOYMENT",
-    "EMPLOYER_STATE",
-    "NAICS_CODE",
-    "WORKSITE_WORKERS",
-    "SECONDARY_ENTITY",
-    "WORKSITE_CITY",
-    "WORKSITE_COUNTY",
-    "WORKSITE_STATE",
-    "PREVAILING_WAGE",
-    "PW_WAGE_LEVEL",
-    "TOTAL_WORKSITE_LOCATIONS",
-    "H_1B_DEPENDENT",
-    "WILLFUL_VIOLATOR",
-    "pw_oes_period_group",
-    "soc_code_grouped",
-]
-
-MODEL_DIR = Path("models")
-MODEL_EXTENSION = "*.pkl"
-
-# Rangos calculados desde df_final.csv
-DATE_RANGES = {
-    "RECEIVED_DATE": {"min": date(2019, 9, 25), "median": date(2022, 5, 16), "max": date(2024, 9, 23)},
-    "BEGIN_DATE": {"min": date(2019, 9, 25), "median": date(2022, 10, 1), "max": date(2025, 3, 22)},
-    "END_DATE": {"min": date(2019, 10, 30), "median": date(2025, 9, 30), "max": date(2028, 3, 21)},
-}
-
-NUMERIC_RANGES = {
-    "NEW_EMPLOYMENT": {"min": 1, "q1": 1, "median": 1, "q3": 1, "max": 450},
-    "NAICS_CODE": {"min": -271021, "q1": 336110, "median": 541511, "q3": 541512, "max": 928120},
-    "WORKSITE_WORKERS": {"min": 1.0, "q1": 1.0, "median": 1.0, "q3": 1.0, "max": 450.0},
-    "PREVAILING_WAGE": {"min": 15080.0, "q1": 67708.0, "median": 83658.0, "q3": 102669.0, "max": 300000.0},
-    "TOTAL_WORKSITE_LOCATIONS": {"min": 1.0, "q1": 1.0, "median": 1.0, "q3": 2.0, "max": 10.0},
-}
-
-VISA_CLASSES = ["H-1B", "E-3 Australian", "H-1B1 Chile", "H-1B1 Singapore"]
-YES_NO_VALUES = ["No", "Yes", "N", "Y"]
-FULL_TIME_VALUES = ["Y", "N"]
-PW_WAGE_LEVELS = ["I", "II", "III", "IV", "V"]
-PW_OES_PERIODS = ["2024-2025", "2023-2024", "2022-2023", "2021-2022", "2020-2021", "2019-2020", "2018-2019"]
-
-STATES = [
-    "CA", "TX", "NJ", "NY", "IL", "WA", "MA", "VA", "NC", "GA", "MI", "FL", "MD", "PA", "OH",
-    "AZ", "CO", "MN", "CT", "MO", "TN", "DC", "IN", "WI", "UT", "OR", "DE", "IA", "KS", "SC",
-    "KY", "LA", "AL", "AR", "OK", "RI", "NE", "NV", "NH", "NM", "ID", "MS", "HI", "ME", "MT", "ND",
-    "SD", "VT", "WV", "WY", "AK", "PR", "GU", "VI", "MP"
-]
-
-COMMON_WORKSITE_CITIES = [
-    "New York", "San Francisco", "Seattle", "Chicago", "Austin", "Houston", "San Jose", "Sunnyvale",
-    "Mountain View", "Boston", "Dallas", "Atlanta", "Irving", "Plano", "Redmond", "San Diego",
-    "Los Angeles", "Bellevue", "Santa Clara", "Charlotte", "Alpharetta", "Cambridge", "Pittsburgh",
-    "Philadelphia", "Phoenix", "Jersey City", "Hillsboro", "Columbus", "Washington"
-]
-
-COMMON_WORKSITE_COUNTIES = [
-    "NEW YORK", "SANTA CLARA", "KING", "DALLAS", "COOK", "LOS ANGELES", "SAN FRANCISCO", "COLLIN",
-    "FULTON", "HARRIS", "TRAVIS", "BOSTON CITY", "MIDDLESEX", "SAN MATEO", "MARICOPA",
-    "ALAMEDA", "ORANGE", "SAN DIEGO", "MONTGOMERY", "FAIRFAX", "HUDSON", "OAKLAND", "WAKE",
-    "WASHINGTON", "MECKLENBURG", "ALLEGHENY", "HENNEPIN", "WAYNE", "MERCER", "HILLSBOROUGH"
-]
-
-COMMON_SOC_CODES = [
-    "15-1132.00", "15-1252.00", "OTHER", "15-1133.00", "15-1121.00", "15-1299.08", "13-2051.00",
-    "15-1199.02", "15-2031.00", "17-2141.00", "13-2011.00", "19-1042.00", "13-1111.00",
-    "15-1211.00", "15-1199.01", "15-1199.08", "15-2051.00", "17-2072.00", "13-1161.00",
-    "15-2041.00", "17-2071.00", "15-1251.00", "15-1253.00", "15-1131.00", "15-1299.09",
-    "15-1199.09", "19-1021.00", "17-2051.00", "17-2112.00", "15-2051.01"
-]
 
 # ============================================================
-# FUNCIONES AUXILIARES
+# FUNCIÓN PARA CARGAR EL MODELO
 # ============================================================
+
 @st.cache_resource
-def load_model(model_path: str):
-    """Carga un modelo .pkl desde la carpeta models usando pickle."""
-    with open(model_path, "rb") as file:
-        return pickle.load(file)
+def load_model():
+    """
+    Carga el modelo entrenado desde la carpeta models.
+    El modelo fue guardado en formato .pkl.gz usando pickle + gzip.
+    """
+
+    model_path = "models/model.pkl.gz"
+
+    if not os.path.exists(model_path):
+        st.error(f"No se encontró el archivo del modelo en la ruta: {model_path}")
+        st.stop()
+
+    with gzip.open(model_path, "rb") as file:
+        model = pickle.load(file)
+
+    return model
 
 
-def find_pickle_models() -> list[str]:
-    """Busca únicamente modelos con extensión .pkl dentro de la carpeta models."""
-    if not MODEL_DIR.exists():
-        return []
-    return sorted(str(path) for path in MODEL_DIR.glob(MODEL_EXTENSION))
+model = load_model()
 
 
-def format_currency(value: float) -> str:
-    return f"${value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+# ============================================================
+# OPCIONES BASADAS EN EL DATASET FINAL
+# ============================================================
+
+visa_class_options = [
+    "H-1B",
+    "E-3 Australian",
+    "H-1B1 Chile",
+    "H-1B1 Singapore"
+]
+
+# Columnas normalizadas previamente en el dataset:
+# FULL_TIME_POSITION, SECONDARY_ENTITY, WILLFUL_VIOLATOR, H_1B_DEPENDENT
+binary_options = ["N", "Y"]
+
+state_options = [
+    "CA", "TX", "NY", "NJ", "IL", "WA", "MA", "VA", "NC", "GA",
+    "MI", "FL", "MD", "PA", "OH", "AZ", "MN", "TN", "CT", "MO",
+    "CO", "IN", "OR", "WI", "DC", "UT", "SC", "KY", "LA", "AL",
+    "IA", "KS", "NE", "OK", "NV", "AR", "DE", "RI", "NH", "ID",
+    "NM", "MS", "ME", "HI", "WV", "ND", "SD", "MT", "AK", "WY",
+    "VT", "PR", "GU", "VI", "MP", "Other"
+]
+
+pw_wage_level_options = ["I", "II", "III", "IV"]
+
+pw_oes_period_options = [
+    "2018-2019",
+    "2019-2020",
+    "2020-2021",
+    "2021-2022",
+    "2022-2023",
+    "2023-2024",
+    "2024-2025"
+]
+
+worksite_city_options = [
+    "New York", "San Francisco", "Seattle", "Chicago", "Austin",
+    "Houston", "San Jose", "Sunnyvale", "Mountain View", "Boston",
+    "Dallas", "Atlanta", "Irving", "Plano", "Redmond",
+    "San Diego", "Los Angeles", "Bellevue", "Santa Clara", "Jersey City",
+    "Charlotte", "Phoenix", "Tampa", "Miami", "Philadelphia",
+    "Arlington", "Cupertino", "Fremont", "Pittsburgh", "Detroit"
+]
+
+naics_code_options = [
+    "541511", "541512", "611310", "54151", "541211",
+    "622110", "541330", "523110", "45411", "518210",
+    "5416", "541519", "54171", "611110", "541611",
+    "511210", "3344", "51121", "334111", "454110"
+]
+
+soc_code_options = [
+    "15-1132.00", "15-1252.00", "OTHER", "15-1133.00",
+    "15-1121.00", "15-1299.08", "13-2051.00", "15-1199.02",
+    "15-2031.00", "17-2141.00", "13-2011.00", "19-1042.00",
+    "13-1111.00", "15-1211.00", "15-1199.01", "15-1199.08",
+    "15-2051.00", "17-2072.00", "13-1161.00", "15-2041.00"
+]
 
 
-def random_date_between(start: date, end: date) -> date:
-    days = (end - start).days
-    return start + timedelta(days=random.randint(0, days))
+# ============================================================
+# VALORES INICIALES DEL FORMULARIO
+# ============================================================
 
+default_values = {
+    "visa_class": "H-1B",
+    "full_time_position": "Y",
+    "new_employment": 1,
+    "employer_state": "CA",
+    "naics_code": "541511",
+    "worksite_workers": 1.0,
+    "secondary_entity": "N",
+    "worksite_city": "New York",
+    "worksite_state": "CA",
+    "prevailing_wage": 90000.0,
+    "pw_wage_level": "II",
+    "total_worksite_locations": 1.0,
+    "h1b_dependent": "N",
+    "willful_violator": "N",
+    "pw_oes_period_group": "2023-2024",
+    "soc_code_grouped": "15-1252.00",
+    "received_year": 2023,
+    "process_duration_days": 7,
+    "employment_duration_days": 1095
+}
 
-def random_numeric_from_range(column: str):
-    """Genera valores aleatorios realistas usando el rango intercuartílico del dataset."""
-    info = NUMERIC_RANGES[column]
-
-    if column in ["NEW_EMPLOYMENT", "WORKSITE_WORKERS"]:
-        # En el dataset la gran mayoría de registros tiene valor 1; ocasionalmente generamos valores mayores.
-        return random.choice([1, 1, 1, 1, random.randint(2, 10), random.randint(11, int(info["max"]))])
-
-    if column == "TOTAL_WORKSITE_LOCATIONS":
-        return random.choice([1, 1, 1, 2, random.randint(3, int(info["max"]))])
-
-    if column == "NAICS_CODE":
-        return random.choice([336110, 541511, 541512, 541519, 611310, 518210, random.randint(100000, 928120)])
-
-    if column == "PREVAILING_WAGE":
-        return round(random.uniform(info["q1"], info["q3"]), 2)
-
-    return random.uniform(info["min"], info["max"])
-
-
-def default_values() -> dict:
-    return {
-        "received_date": DATE_RANGES["RECEIVED_DATE"]["median"],
-        "begin_date": DATE_RANGES["BEGIN_DATE"]["median"],
-        "end_date": DATE_RANGES["END_DATE"]["median"],
-        "visa_class": "H-1B",
-        "full_time_position": "Y",
-        "new_employment": int(NUMERIC_RANGES["NEW_EMPLOYMENT"]["median"]),
-        "secondary_entity": "No",
-        "h1b_dependent": "No",
-        "willful_violator": "No",
-        "employer_state": "CA",
-        "worksite_state": "CA",
-        "worksite_city": "New York",
-        "worksite_county": "NEW YORK",
-        "naics_code": int(NUMERIC_RANGES["NAICS_CODE"]["median"]),
-        "soc_code_grouped": "15-1132.00",
-        "pw_oes_period_group": "2023-2024",
-        "pw_wage_level": "II",
-        "prevailing_wage": float(NUMERIC_RANGES["PREVAILING_WAGE"]["median"]),
-        "worksite_workers": float(NUMERIC_RANGES["WORKSITE_WORKERS"]["median"]),
-        "total_worksite_locations": float(NUMERIC_RANGES["TOTAL_WORKSITE_LOCATIONS"]["median"]),
-    }
-
-
-def random_values() -> dict:
-    received_date = random_date_between(DATE_RANGES["RECEIVED_DATE"]["min"], DATE_RANGES["RECEIVED_DATE"]["max"])
-    begin_date = random_date_between(max(received_date, DATE_RANGES["BEGIN_DATE"]["min"]), DATE_RANGES["BEGIN_DATE"]["max"])
-    end_date = random_date_between(max(begin_date + timedelta(days=30), DATE_RANGES["END_DATE"]["min"]), DATE_RANGES["END_DATE"]["max"])
-
-    return {
-        "received_date": received_date,
-        "begin_date": begin_date,
-        "end_date": end_date,
-        "visa_class": random.choices(VISA_CLASSES, weights=[95, 2, 2, 1], k=1)[0],
-        "full_time_position": random.choices(FULL_TIME_VALUES, weights=[98, 2], k=1)[0],
-        "new_employment": int(random_numeric_from_range("NEW_EMPLOYMENT")),
-        "secondary_entity": random.choices(YES_NO_VALUES, weights=[65, 17, 13, 5], k=1)[0],
-        "h1b_dependent": random.choices(YES_NO_VALUES, weights=[60, 20, 15, 5], k=1)[0],
-        "willful_violator": random.choices(YES_NO_VALUES, weights=[80, 1, 19, 1], k=1)[0],
-        "employer_state": random.choice(STATES[:20]),
-        "worksite_state": random.choice(STATES[:20]),
-        "worksite_city": random.choice(COMMON_WORKSITE_CITIES),
-        "worksite_county": random.choice(COMMON_WORKSITE_COUNTIES),
-        "naics_code": int(random_numeric_from_range("NAICS_CODE")),
-        "soc_code_grouped": random.choice(COMMON_SOC_CODES),
-        "pw_oes_period_group": random.choices(PW_OES_PERIODS, weights=[2, 28, 17, 21, 21, 11, 1], k=1)[0],
-        "pw_wage_level": random.choices(PW_WAGE_LEVELS, weights=[29, 49, 14, 8, 1], k=1)[0],
-        "prevailing_wage": float(random_numeric_from_range("PREVAILING_WAGE")),
-        "worksite_workers": float(random_numeric_from_range("WORKSITE_WORKERS")),
-        "total_worksite_locations": float(random_numeric_from_range("TOTAL_WORKSITE_LOCATIONS")),
-    }
-
-
-def initialize_session_state():
-    for key, value in default_values().items():
-        st.session_state.setdefault(key, value)
-
-
-def set_random_session_values():
-    for key, value in random_values().items():
+for key, value in default_values.items():
+    if key not in st.session_state:
         st.session_state[key] = value
 
 
-def build_input_dataframe() -> pd.DataFrame:
-    input_data = pd.DataFrame([
-        {
-            "RECEIVED_DATE": str(st.session_state.received_date),
-            "VISA_CLASS": st.session_state.visa_class,
-            "FULL_TIME_POSITION": st.session_state.full_time_position,
-            "BEGIN_DATE": str(st.session_state.begin_date),
-            "END_DATE": str(st.session_state.end_date),
-            "NEW_EMPLOYMENT": int(st.session_state.new_employment),
-            "EMPLOYER_STATE": st.session_state.employer_state,
-            "NAICS_CODE": int(st.session_state.naics_code),
-            "WORKSITE_WORKERS": float(st.session_state.worksite_workers),
-            "SECONDARY_ENTITY": st.session_state.secondary_entity,
-            "WORKSITE_CITY": st.session_state.worksite_city.strip(),
-            "WORKSITE_COUNTY": st.session_state.worksite_county.strip(),
-            "WORKSITE_STATE": st.session_state.worksite_state,
-            "PREVAILING_WAGE": float(st.session_state.prevailing_wage),
-            "PW_WAGE_LEVEL": st.session_state.pw_wage_level,
-            "TOTAL_WORKSITE_LOCATIONS": float(st.session_state.total_worksite_locations),
-            "H_1B_DEPENDENT": st.session_state.h1b_dependent,
-            "WILLFUL_VIOLATOR": st.session_state.willful_violator,
-            "pw_oes_period_group": st.session_state.pw_oes_period_group,
-            "soc_code_grouped": st.session_state.soc_code_grouped.strip(),
-        }
-    ])
-    return input_data[FEATURE_COLUMNS]
+# ============================================================
+# FUNCIÓN PARA RELLENO ALEATORIO
+# ============================================================
+
+def fill_random_values():
+    """
+    Genera valores aleatorios respetando los rangos y categorías observadas
+    en el dataset final utilizado para entrenar el modelo.
+    """
+
+    st.session_state.visa_class = random.choice(visa_class_options)
+
+    # Variables binarias ya normalizadas a N/Y
+    st.session_state.full_time_position = random.choice(binary_options)
+    st.session_state.secondary_entity = random.choice(binary_options)
+    st.session_state.h1b_dependent = random.choice(binary_options)
+    st.session_state.willful_violator = random.choice(binary_options)
+
+    st.session_state.new_employment = random.randint(1, 450)
+
+    st.session_state.employer_state = random.choice(state_options)
+    st.session_state.worksite_state = random.choice(state_options)
+    st.session_state.worksite_city = random.choice(worksite_city_options)
+
+    st.session_state.naics_code = random.choice(naics_code_options)
+    st.session_state.soc_code_grouped = random.choice(soc_code_options)
+
+    st.session_state.worksite_workers = float(random.randint(1, 450))
+    st.session_state.total_worksite_locations = float(random.randint(1, 10))
+
+    st.session_state.prevailing_wage = float(random.randint(15080, 300000))
+    st.session_state.pw_wage_level = random.choice(pw_wage_level_options)
+    st.session_state.pw_oes_period_group = random.choice(pw_oes_period_options)
+
+    st.session_state.received_year = random.randint(2019, 2024)
+    st.session_state.process_duration_days = random.randint(4, 152)
+    st.session_state.employment_duration_days = random.randint(1, 1096)
 
 # ============================================================
-# INTERFAZ
+# FUNCIÓN PARA VACIAR / REINICIAR FORMULARIO
 # ============================================================
-initialize_session_state()
 
-st.title("💼 Predicción de salario ofrecido")
-st.caption("Modelo de Machine Learning para estimar el salario anual promedio ofrecido en solicitudes LCA / H-1B.")
+def clear_form_values():
+    """
+    Reinicia el formulario a los valores por defecto.
+    Esto permite limpiar rápidamente los parámetros ingresados o generados.
+    """
 
-models_found = find_pickle_models()
+    for key, value in default_values.items():
+        st.session_state[key] = value
 
-if not models_found:
-    st.error(
-        "No se encontró ningún modelo `.pkl` dentro de la carpeta `models/`. "
-        "Guarda el Pipeline o modelo final en esa carpeta con extensión `.pkl`."
+# ============================================================
+# TÍTULO E INTRODUCCIÓN
+# ============================================================
+
+st.title("💼 Predicción de Salario Anual Ofrecido")
+st.markdown("""
+Esta aplicación utiliza un modelo de regresión entrenado con datos históricos de solicitudes laborales H-1B / LCA.
+
+El objetivo es estimar el **salario anual promedio ofrecido** según las características principales de la solicitud.
+""")
+
+
+# ============================================================
+# BOTONES DE RELLENO Y LIMPIEZA
+# ============================================================
+
+st.markdown("### 🎲 Rellenado automático")
+
+col_random, col_clear = st.columns([4, 1])
+
+with col_random:
+    st.button(
+        "Rellenar parámetros aleatoriamente",
+        on_click=fill_random_values,
+        use_container_width=True
     )
-    st.stop()
 
-selected_model_path = st.sidebar.selectbox(
-    "Modelo a utilizar",
-    models_found,
-    format_func=lambda path: Path(path).name
-)
-
-model = load_model(selected_model_path)
-st.sidebar.success(f"Modelo cargado: {Path(selected_model_path).name}")
+with col_clear:
+    st.button(
+        "Vaciar",
+        on_click=clear_form_values,
+        use_container_width=True
+    )
 
 st.info(
-    "Los rangos del formulario fueron configurados con base en `df_final.csv`. "
-    "Para el botón aleatorio se priorizan valores frecuentes y rangos realistas del dataset."
+    "El botón de rellenado genera un caso de prueba usando categorías reales y rangos numéricos "
+    "observados en el dataset final. El botón de vaciado reinicia el formulario a sus valores iniciales."
 )
 
-if st.button("🎲 Rellenar formulario aleatoriamente"):
-    set_random_session_values()
-    st.rerun()
+st.divider()
+
+# ============================================================
+# FORMULARIO DE ENTRADA
+# ============================================================
+
+st.markdown("### 📝 Parámetros de entrada")
 
 with st.form("prediction_form"):
-    st.subheader("📌 Datos de la solicitud")
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
+    # ------------------------------------------------------------
+    # Columna 1: Información general
+    # ------------------------------------------------------------
     with col1:
-        st.date_input(
-            "Fecha de recepción",
-            min_value=DATE_RANGES["RECEIVED_DATE"]["min"],
-            max_value=DATE_RANGES["RECEIVED_DATE"]["max"],
-            key="received_date"
+        st.markdown("#### Información general")
+
+        visa_class = st.selectbox(
+            "Clase de visa",
+            visa_class_options,
+            key="visa_class"
         )
-        st.date_input(
-            "Fecha de inicio",
-            min_value=DATE_RANGES["BEGIN_DATE"]["min"],
-            max_value=DATE_RANGES["BEGIN_DATE"]["max"],
-            key="begin_date"
+
+        full_time_position = st.selectbox(
+            "¿Es una posición de tiempo completo?",
+            binary_options,
+            key="full_time_position"
         )
-        st.date_input(
-            "Fecha de término",
-            min_value=DATE_RANGES["END_DATE"]["min"],
-            max_value=DATE_RANGES["END_DATE"]["max"],
-            key="end_date"
-        )
-        st.selectbox("Tipo de visa", VISA_CLASSES, key="visa_class")
-        st.selectbox("Posición full time", FULL_TIME_VALUES, key="full_time_position")
-        st.number_input(
-            "Nuevos empleos",
-            min_value=int(NUMERIC_RANGES["NEW_EMPLOYMENT"]["min"]),
-            max_value=int(NUMERIC_RANGES["NEW_EMPLOYMENT"]["max"]),
+
+        new_employment = st.number_input(
+            "Cantidad de nuevos empleos solicitados",
+            min_value=1,
+            max_value=450,
             step=1,
             key="new_employment"
         )
-        st.selectbox("Entidad secundaria", YES_NO_VALUES, key="secondary_entity")
-        st.selectbox("H-1B dependent", YES_NO_VALUES, key="h1b_dependent")
-        st.selectbox("Willful violator", YES_NO_VALUES, key="willful_violator")
 
-    with col2:
-        st.selectbox("Estado del empleador", STATES, key="employer_state")
-        st.selectbox("Estado del lugar de trabajo", STATES, key="worksite_state")
-        st.selectbox("Ciudad del lugar de trabajo", COMMON_WORKSITE_CITIES, key="worksite_city")
-        st.selectbox("Condado del lugar de trabajo", COMMON_WORKSITE_COUNTIES, key="worksite_county")
-        st.number_input(
-            "NAICS code",
-            min_value=int(NUMERIC_RANGES["NAICS_CODE"]["min"]),
-            max_value=int(NUMERIC_RANGES["NAICS_CODE"]["max"]),
-            step=1,
-            key="naics_code",
-            help="El mínimo negativo aparece porque ese valor existe en el dataset final procesado."
+        secondary_entity = st.selectbox(
+            "¿Trabaja en una entidad secundaria?",
+            binary_options,
+            key="secondary_entity"
         )
-        st.selectbox("SOC code agrupado", COMMON_SOC_CODES, key="soc_code_grouped")
-        st.selectbox("Periodo OES / salario prevaleciente", PW_OES_PERIODS, key="pw_oes_period_group")
-        st.selectbox("Nivel salarial prevaleciente", PW_WAGE_LEVELS, key="pw_wage_level")
 
-    st.subheader("💰 Variables salariales y operativas")
+        received_year = st.number_input(
+            "Año de recepción",
+            min_value=2019,
+            max_value=2024,
+            step=1,
+            key="received_year"
+        )
 
-    col3, col4 = st.columns(2)
+        process_duration_days = st.number_input(
+            "Duración del trámite en días",
+            min_value=4,
+            max_value=152,
+            step=1,
+            key="process_duration_days"
+        )
 
+    # ------------------------------------------------------------
+    # Columna 2: Ubicación y clasificación
+    # ------------------------------------------------------------
+    with col2:
+        st.markdown("#### Ubicación y clasificación")
+
+        employer_state = st.selectbox(
+            "Estado del empleador",
+            state_options,
+            key="employer_state"
+        )
+
+        worksite_state = st.selectbox(
+            "Estado del lugar de trabajo",
+            state_options,
+            key="worksite_state"
+        )
+
+        worksite_city = st.selectbox(
+            "Ciudad del lugar de trabajo",
+            worksite_city_options,
+            key="worksite_city"
+        )
+
+        naics_code = st.selectbox(
+            "Código NAICS",
+            naics_code_options,
+            key="naics_code"
+        )
+
+        soc_code_grouped = st.selectbox(
+            "Grupo SOC de ocupación",
+            soc_code_options,
+            key="soc_code_grouped"
+        )
+
+        employment_duration_days = st.number_input(
+            "Duración del empleo en días",
+            min_value=1,
+            max_value=1096,
+            step=1,
+            key="employment_duration_days"
+        )
+
+    # ------------------------------------------------------------
+    # Columna 3: Salario, empresa y cumplimiento
+    # ------------------------------------------------------------
     with col3:
-        st.number_input(
-            "Prevailing wage anual",
-            min_value=float(NUMERIC_RANGES["PREVAILING_WAGE"]["min"]),
-            max_value=float(NUMERIC_RANGES["PREVAILING_WAGE"]["max"]),
+        st.markdown("#### Salario y cumplimiento")
+
+        prevailing_wage = st.number_input(
+            "Salario prevaleciente anual",
+            min_value=15080.0,
+            max_value=300000.0,
             step=1000.0,
             key="prevailing_wage"
         )
-        st.number_input(
-            "Trabajadores en el worksite",
-            min_value=float(NUMERIC_RANGES["WORKSITE_WORKERS"]["min"]),
-            max_value=float(NUMERIC_RANGES["WORKSITE_WORKERS"]["max"]),
-            step=1.0,
-            key="worksite_workers"
+
+        pw_wage_level = st.selectbox(
+            "Nivel salarial PW",
+            pw_wage_level_options,
+            key="pw_wage_level"
         )
 
-    with col4:
-        st.number_input(
-            "Total worksite locations",
-            min_value=float(NUMERIC_RANGES["TOTAL_WORKSITE_LOCATIONS"]["min"]),
-            max_value=float(NUMERIC_RANGES["TOTAL_WORKSITE_LOCATIONS"]["max"]),
+        pw_oes_period_group = st.selectbox(
+            "Grupo del período OES",
+            pw_oes_period_options,
+            key="pw_oes_period_group"
+        )
+
+        total_worksite_locations = st.number_input(
+            "Total de ubicaciones de trabajo",
+            min_value=1.0,
+            max_value=10.0,
             step=1.0,
             key="total_worksite_locations"
         )
 
-    submitted = st.form_submit_button("🔮 Predecir salario")
+        worksite_workers = st.number_input(
+            "Cantidad de trabajadores en el lugar de trabajo",
+            min_value=1.0,
+            max_value=450.0,
+            step=1.0,
+            key="worksite_workers"
+        )
+
+        h1b_dependent = st.selectbox(
+            "¿El empleador es H-1B dependent?",
+            binary_options,
+            key="h1b_dependent"
+        )
+
+        willful_violator = st.selectbox(
+            "¿El empleador registra willful violator?",
+            binary_options,
+            key="willful_violator"
+        )
+
+    submitted = st.form_submit_button(
+        "Generar predicción",
+        use_container_width=True
+    )
+
+
+# ============================================================
+# GENERACIÓN DE LA PREDICCIÓN
+# ============================================================
 
 if submitted:
-    input_data = build_input_dataframe()
 
-    st.markdown("### 🧾 Registro enviado al modelo")
-    st.dataframe(input_data, use_container_width=True)
+    # Se construye un DataFrame con exactamente las mismas variables predictoras
+    # utilizadas durante el entrenamiento del modelo.
+    input_data = pd.DataFrame({
+        "VISA_CLASS": [visa_class],
+        "FULL_TIME_POSITION": [full_time_position],
+        "NEW_EMPLOYMENT": [new_employment],
+        "EMPLOYER_STATE": [employer_state],
+        "NAICS_CODE": [naics_code],
+        "WORKSITE_WORKERS": [worksite_workers],
+        "SECONDARY_ENTITY": [secondary_entity],
+        "WORKSITE_CITY": [worksite_city],
+        "WORKSITE_STATE": [worksite_state],
+        "PREVAILING_WAGE": [prevailing_wage],
+        "PW_WAGE_LEVEL": [pw_wage_level],
+        "TOTAL_WORKSITE_LOCATIONS": [total_worksite_locations],
+        "H_1B_DEPENDENT": [h1b_dependent],
+        "WILLFUL_VIOLATOR": [willful_violator],
+        "pw_oes_period_group": [pw_oes_period_group],
+        "soc_code_grouped": [soc_code_grouped],
+        "received_year": [received_year],
+        "process_duration_days": [process_duration_days],
+        "employment_duration_days": [employment_duration_days]
+    })
+
+    # Columnas categóricas según la estructura final del dataset.
+    categorical_cols = [
+        "VISA_CLASS",
+        "FULL_TIME_POSITION",
+        "EMPLOYER_STATE",
+        "NAICS_CODE",
+        "SECONDARY_ENTITY",
+        "WORKSITE_CITY",
+        "WORKSITE_STATE",
+        "PW_WAGE_LEVEL",
+        "H_1B_DEPENDENT",
+        "WILLFUL_VIOLATOR",
+        "pw_oes_period_group",
+        "soc_code_grouped",
+        "received_year"
+    ]
+
+    # Columnas numéricas según la estructura final del dataset.
+    numeric_cols = [
+        "NEW_EMPLOYMENT",
+        "WORKSITE_WORKERS",
+        "PREVAILING_WAGE",
+        "TOTAL_WORKSITE_LOCATIONS",
+        "process_duration_days",
+        "employment_duration_days"
+    ]
+
+    # Se respetan los tipos de datos usados en el dataset final.
+    for col in categorical_cols:
+        input_data[col] = input_data[col].astype("category")
+
+    for col in numeric_cols:
+        input_data[col] = pd.to_numeric(input_data[col], errors="coerce")
 
     try:
-        prediction = model.predict(input_data)
-        predicted_wage = float(np.ravel(prediction)[0])
+        prediction = model.predict(input_data)[0]
 
-        st.success("Predicción generada correctamente ✅")
+        st.success("✅ Predicción generada correctamente")
+
+        st.markdown("### Resultado estimado")
+
         st.metric(
             label="Salario anual promedio ofrecido estimado",
-            value=format_currency(predicted_wage)
+            value=f"${prediction:,.2f} USD"
         )
 
-    except Exception as error:
-        st.error("No se pudo generar la predicción con las columnas actuales.")
-        st.exception(error)
+        st.markdown("### Datos enviados al modelo")
+        st.dataframe(input_data, use_container_width=True)
 
-        expected_features = getattr(model, "feature_names_in_", None)
-        if expected_features is not None:
-            st.warning("El modelo parece esperar estas columnas:")
-            st.write(list(expected_features))
+    except Exception as e:
+        st.error("Ocurrió un error al generar la predicción.")
+        st.write("Detalle del error:")
+        st.code(str(e))
 
-        st.info(
-            "Si el modelo fue entrenado con variables transformadas manualmente, guarda mejor un Pipeline completo "
-            "que incluya imputación, codificación de variables categóricas y el modelo final."
-        )
+
+# ============================================================
+# PIE DE PÁGINA
+# ============================================================
 
 st.divider()
-st.caption(
-    "Aviso: esta predicción corresponde a una estimación generada por un modelo estadístico y puede presentar margen de error; "
-    "no debe interpretarse como un valor definitivo."
-)
+
+st.markdown("""
+<div style='text-align: justify; color: #808080; font-size: 0.85em; padding: 14px; border-radius: 8px; background-color: rgba(128, 128, 128, 0.1);'>
+
+<strong>Nota sobre el alcance del modelo predictivo:</strong><br><br>
+
+Las estimaciones salariales presentadas por esta aplicación son generadas mediante un modelo de Machine Learning entrenado con datos históricos de solicitudes laborales.
+Por lo tanto, el resultado debe interpretarse como una aproximación estadística y no como un valor definitivo o garantizado.
+
+<br><br>
+
+El modelo puede presentar márgenes de error, especialmente cuando recibe combinaciones de datos poco frecuentes, valores atípicos o escenarios distintos a los observados durante su entrenamiento.
+Factores externos como cambios del mercado laboral, condiciones económicas, políticas migratorias, características específicas de la empresa contratante u otros elementos no incluidos en el dataset pueden influir en el salario real ofrecido.
+
+<br><br>
+
+Esta herramienta fue desarrollada con fines académicos y de apoyo analítico dentro de un proyecto de Ciencia de Datos. No constituye asesoramiento financiero, laboral ni legal.
+
+</div>
+""", unsafe_allow_html=True)
