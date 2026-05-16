@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import pickle
 import gzip
-import os
 import random
+from pathlib import Path
 
 
 # ============================================================
@@ -18,29 +19,182 @@ st.set_page_config(
 
 
 # ============================================================
-# FUNCIÓN PARA CARGAR EL MODELO
+# ESTILOS DE INTERFAZ
+# ============================================================
+
+st.markdown(
+    """
+    <style>
+        /* Contenedor general */
+        .main .block-container {
+            padding-top: 1.2rem;
+            padding-bottom: 1.2rem;
+            max-width: 1280px;
+        }
+
+        /* Título principal */
+        h1 {
+            text-align: center;
+            font-size: 2.05rem !important;
+            margin-bottom: 0.35rem !important;
+        }
+
+        .app-subtitle {
+            text-align: center;
+            color: #a6a6a6;
+            font-size: 0.92rem;
+            margin-bottom: 0.9rem;
+        }
+
+        /* Títulos de sección centrados */
+        .section-title {
+            text-align: center;
+            font-size: 1.55rem;
+            font-weight: 700;
+            margin-top: 1rem;
+            margin-bottom: 0.8rem;
+        }
+
+        /* Compactar formulario */
+        div[data-testid="stForm"] {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 0.85rem 0.85rem 0.7rem 0.85rem;
+            border-radius: 10px;
+        }
+
+        div[data-testid="stVerticalBlock"] {
+            gap: 0.24rem;
+        }
+
+        div[data-testid="stNumberInput"],
+        div[data-testid="stSelectbox"] {
+            margin-bottom: -0.50rem;
+        }
+
+        label[data-testid="stWidgetLabel"] {
+            font-size: 0.76rem !important;
+            font-weight: 600;
+            margin-bottom: -0.38rem !important;
+        }
+
+        div[data-baseweb="select"] > div,
+        div[data-testid="stNumberInput"] input {
+            min-height: 32px !important;
+            font-size: 0.86rem !important;
+        }
+
+        h3 {
+            margin-top: 0.25rem !important;
+            margin-bottom: 0.35rem !important;
+        }
+
+        h4 {
+            font-size: 1rem !important;
+            margin-top: 0.10rem !important;
+            margin-bottom: 0.35rem !important;
+        }
+
+        div[data-testid="stMarkdownContainer"] p {
+            margin-bottom: 0.22rem;
+        }
+
+        .stButton > button {
+            min-height: 34px;
+        }
+
+        /* Resultado centrado */
+        .result-title {
+            text-align: center;
+            font-size: 1.55rem;
+            font-weight: 700;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        div[data-testid="stMetric"] {
+            text-align: center;
+        }
+
+        div[data-testid="stMetric"] label {
+            justify-content: center;
+        }
+
+        /* Tabla de datos enviados más compacta */
+        div[data-testid="stDataFrame"] {
+            max-height: 430px;
+        }
+
+        .footer-note {
+            max-width: 900px;
+            margin: 1.3rem auto 0 auto;
+            color: #9a9a9a;
+            font-size: 0.86rem;
+            line-height: 1.5;
+            text-align: center;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
+# FUNCIÓN PARA CARGAR EL PAQUETE DEL MODELO
 # ============================================================
 
 @st.cache_resource
-def load_model():
+def load_model_package():
     """
-    Carga el modelo entrenado desde la carpeta models.
-    El modelo fue guardado en formato .pkl.gz usando pickle + gzip.
+    Carga el paquete del modelo entrenado desde la carpeta models.
+    El archivo .pkl.gz contiene un diccionario con modelo, columnas,
+    variable objetivo, tipo de modelo y métricas.
     """
 
-    model_path = "models/model.pkl.gz"
+    model_path = Path("models") / "XGB_OPTUNA_50T.pkl.gz"
 
-    if not os.path.exists(model_path):
+    if not model_path.exists():
         st.error(f"No se encontró el archivo del modelo en la ruta: {model_path}")
         st.stop()
 
     with gzip.open(model_path, "rb") as file:
-        model = pickle.load(file)
+        model_package = pickle.load(file)
 
-    return model
+    required_keys = [
+        "model",
+        "feature_names",
+        "categorical_cols",
+        "target",
+        "model_type",
+        "metrics"
+    ]
+
+    if not isinstance(model_package, dict):
+        st.error("El archivo cargado no tiene el formato esperado. Se esperaba un diccionario.")
+        st.stop()
+
+    missing_keys = [key for key in required_keys if key not in model_package]
+
+    if missing_keys:
+        st.error("El paquete del modelo no contiene todas las claves necesarias.")
+        st.write("Claves faltantes:", missing_keys)
+        st.stop()
+
+    if not hasattr(model_package["model"], "predict"):
+        st.error("El objeto almacenado en la clave 'model' no tiene método predict().")
+        st.stop()
+
+    return model_package
 
 
-model = load_model()
+model_package = load_model_package()
+
+model = model_package["model"]
+feature_names = model_package["feature_names"]
+model_categorical_cols = model_package["categorical_cols"]
+target = model_package["target"]
+model_type = model_package["model_type"]
+metrics = model_package["metrics"]
 
 
 # ============================================================
@@ -54,8 +208,6 @@ visa_class_options = [
     "H-1B1 Singapore"
 ]
 
-# Columnas normalizadas previamente en el dataset:
-# FULL_TIME_POSITION, SECONDARY_ENTITY, WILLFUL_VIOLATOR, H_1B_DEPENDENT
 binary_options = ["N", "Y"]
 
 state_options = [
@@ -64,10 +216,10 @@ state_options = [
     "CO", "IN", "OR", "WI", "DC", "UT", "SC", "KY", "LA", "AL",
     "IA", "KS", "NE", "OK", "NV", "AR", "DE", "RI", "NH", "ID",
     "NM", "MS", "ME", "HI", "WV", "ND", "SD", "MT", "AK", "WY",
-    "VT", "PR", "GU", "VI", "MP", "Other"
+    "VT", "PR", "GU", "VI", "MP", "OTHER"
 ]
 
-pw_wage_level_options = ["Junior", "Intermedio", "Avanzado", "Experto"]
+pw_wage_level_options = ["Junior", "Intermedio", "Experto"]
 
 pw_oes_period_options = [
     "2018-2019",
@@ -85,14 +237,16 @@ worksite_city_options = [
     "Dallas", "Atlanta", "Irving", "Plano", "Redmond",
     "San Diego", "Los Angeles", "Bellevue", "Santa Clara", "Jersey City",
     "Charlotte", "Phoenix", "Tampa", "Miami", "Philadelphia",
-    "Arlington", "Cupertino", "Fremont", "Pittsburgh", "Detroit"
+    "Arlington", "Cupertino", "Fremont", "Pittsburgh", "Detroit",
+    "OTHER"
 ]
 
 naics_code_options = [
     "541511", "541512", "611310", "54151", "541211",
     "622110", "541330", "523110", "45411", "518210",
     "5416", "541519", "54171", "611110", "541611",
-    "511210", "3344", "51121", "334111", "454110"
+    "511210", "3344", "51121", "334111", "454110",
+    "OTHER"
 ]
 
 soc_code_options = [
@@ -119,7 +273,7 @@ default_values = {
     "worksite_city": "New York",
     "worksite_state": "CA",
     "prevailing_wage": 90000.0,
-    "pw_wage_level": "II",
+    "pw_wage_level": "Intermedio",
     "total_worksite_locations": 1.0,
     "h1b_dependent": "N",
     "willful_violator": "N",
@@ -134,20 +288,24 @@ for key, value in default_values.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
+if "prediction_result" not in st.session_state:
+    st.session_state.prediction_result = None
+
+if "last_input_data" not in st.session_state:
+    st.session_state.last_input_data = None
+
 
 # ============================================================
-# FUNCIÓN PARA RELLENO ALEATORIO
+# FUNCIONES DE CONTROL DEL FORMULARIO
 # ============================================================
 
 def fill_random_values():
     """
-    Genera valores aleatorios respetando los rangos y categorías observadas
-    en el dataset final utilizado para entrenar el modelo.
+    Genera valores aleatorios respetando rangos y categorías del dataset final.
     """
 
     st.session_state.visa_class = random.choice(visa_class_options)
 
-    # Variables binarias ya normalizadas a N/Y
     st.session_state.full_time_position = random.choice(binary_options)
     st.session_state.secondary_entity = random.choice(binary_options)
     st.session_state.h1b_dependent = random.choice(binary_options)
@@ -173,73 +331,59 @@ def fill_random_values():
     st.session_state.process_duration_days = random.randint(4, 152)
     st.session_state.employment_duration_days = random.randint(1, 1096)
 
-# ============================================================
-# FUNCIÓN PARA VACIAR / REINICIAR FORMULARIO
-# ============================================================
+    st.session_state.prediction_result = None
+    st.session_state.last_input_data = None
 
-def clear_form_values():
+
+def reset_prediction():
     """
-    Reinicia el formulario a los valores por defecto.
-    Esto permite limpiar rápidamente los parámetros ingresados o generados.
+    Limpia la predicción generada y reinicia el formulario a valores base.
     """
 
     for key, value in default_values.items():
         st.session_state[key] = value
 
-# ============================================================
-# TÍTULO E INTRODUCCIÓN
-# ============================================================
-
-st.title("💼 Predicción de Salario Anual Ofrecido")
-st.markdown("""
-Esta aplicación utiliza un modelo de regresión entrenado con datos históricos de solicitudes laborales H-1B / LCA.
-
-El objetivo es estimar el **salario anual promedio ofrecido** según las características principales de la solicitud.
-""")
+    st.session_state.prediction_result = None
+    st.session_state.last_input_data = None
 
 
 # ============================================================
-# BOTONES DE RELLENO Y LIMPIEZA
+# ENCABEZADO
 # ============================================================
 
-st.markdown("### 🎲 Rellenado automático")
+st.title("Predicción de Salario Anual Ofrecido")
 
-col_random, col_clear = st.columns([4, 1])
-
-with col_random:
-    st.button(
-        "Rellenar parámetros aleatoriamente",
-        on_click=fill_random_values,
-        use_container_width=True
-    )
-
-with col_clear:
-    st.button(
-        "Vaciar",
-        on_click=clear_form_values,
-        use_container_width=True
-    )
-
-st.info(
-    "El botón de rellenado genera un caso de prueba usando categorías reales y rangos numéricos "
-    "observados en el dataset final. El botón de vaciado reinicia el formulario a sus valores iniciales."
+st.markdown(
+    """
+    <div class="app-subtitle">
+        Modelo de regresión para estimar el salario anual promedio ofrecido en solicitudes laborales H-1B / LCA.
+    </div>
+    """,
+    unsafe_allow_html=True
 )
 
-st.divider()
+_, model_info_col, _ = st.columns([1.2, 1.6, 1.2])
+with model_info_col:
+    with st.expander("Información del modelo"):
+        st.write("Tipo de modelo:", model_type)
+        st.write("Variable objetivo:", target)
+        st.write("Cantidad de variables predictoras:", len(feature_names))
+        st.write("Métricas guardadas:")
+        st.json(metrics)
+
 
 # ============================================================
-# FORMULARIO DE ENTRADA
+# PARÁMETROS DE ENTRADA
 # ============================================================
 
-st.markdown("### 📝 Parámetros de entrada")
+st.markdown(
+    "<div class='section-title'>Parámetros de entrada</div>",
+    unsafe_allow_html=True
+)
 
 with st.form("prediction_form"):
+    col1, col2, col3 = st.columns([1, 1, 1], gap="small")
 
-    col1, col2, col3 = st.columns(3)
-
-    # ------------------------------------------------------------
-    # Columna 1: Información general
-    # ------------------------------------------------------------
     with col1:
         st.markdown("#### Información general")
 
@@ -250,13 +394,13 @@ with st.form("prediction_form"):
         )
 
         full_time_position = st.selectbox(
-            "¿Es una posición de tiempo completo?",
+            "Posición de tiempo completo",
             binary_options,
             key="full_time_position"
         )
 
         new_employment = st.number_input(
-            "Cantidad de nuevos empleos solicitados",
+            "Nuevos empleos solicitados",
             min_value=1,
             max_value=450,
             step=1,
@@ -264,7 +408,7 @@ with st.form("prediction_form"):
         )
 
         secondary_entity = st.selectbox(
-            "¿Trabaja en una entidad secundaria?",
+            "Entidad secundaria",
             binary_options,
             key="secondary_entity"
         )
@@ -285,9 +429,6 @@ with st.form("prediction_form"):
             key="process_duration_days"
         )
 
-    # ------------------------------------------------------------
-    # Columna 2: Ubicación y clasificación
-    # ------------------------------------------------------------
     with col2:
         st.markdown("#### Ubicación y clasificación")
 
@@ -329,9 +470,6 @@ with st.form("prediction_form"):
             key="employment_duration_days"
         )
 
-    # ------------------------------------------------------------
-    # Columna 3: Salario, empresa y cumplimiento
-    # ------------------------------------------------------------
     with col3:
         st.markdown("#### Salario y cumplimiento")
 
@@ -364,7 +502,7 @@ with st.form("prediction_form"):
         )
 
         worksite_workers = st.number_input(
-            "Cantidad de trabajadores en el lugar de trabajo",
+            "Trabajadores en el lugar de trabajo",
             min_value=1.0,
             max_value=450.0,
             step=1.0,
@@ -372,15 +510,25 @@ with st.form("prediction_form"):
         )
 
         h1b_dependent = st.selectbox(
-            "¿El empleador es H-1B dependent?",
+            "Empleador H-1B dependent",
             binary_options,
             key="h1b_dependent"
         )
 
         willful_violator = st.selectbox(
-            "¿El empleador registra willful violator?",
+            "Willful violator",
             binary_options,
             key="willful_violator"
+        )
+
+    st.markdown("---")
+
+    _, random_col, _ = st.columns([1.3, 1, 1.3])
+    with random_col:
+        random_clicked = st.form_submit_button(
+            "Rellenar parámetros aleatoriamente",
+            on_click=fill_random_values,
+            use_container_width=True
         )
 
     submitted = st.form_submit_button(
@@ -389,27 +537,25 @@ with st.form("prediction_form"):
     )
 
 
+
 # ============================================================
 # GENERACIÓN DE LA PREDICCIÓN
 # ============================================================
 
 if submitted:
-
-    # Se construye un DataFrame con exactamente las mismas variables predictoras
-    # utilizadas durante el entrenamiento del modelo.
     input_data = pd.DataFrame({
-        "VISA_CLASS": [visa_class],
-        "FULL_TIME_POSITION": [full_time_position],
-        "NEW_EMPLOYMENT": [new_employment],
-        "EMPLOYER_STATE": [employer_state],
-        "NAICS_CODE": [naics_code],
-        "WORKSITE_WORKERS": [worksite_workers],
-        "SECONDARY_ENTITY": [secondary_entity],
-        "WORKSITE_CITY": [worksite_city],
-        "WORKSITE_STATE": [worksite_state],
         "PREVAILING_WAGE": [prevailing_wage],
         "PW_WAGE_LEVEL": [pw_wage_level],
+        "EMPLOYER_STATE": [employer_state],
+        "WORKSITE_STATE": [worksite_state],
+        "WORKSITE_CITY": [worksite_city],
+        "VISA_CLASS": [visa_class],
+        "NAICS_CODE": [naics_code],
+        "FULL_TIME_POSITION": [full_time_position],
+        "NEW_EMPLOYMENT": [new_employment],
         "TOTAL_WORKSITE_LOCATIONS": [total_worksite_locations],
+        "WORKSITE_WORKERS": [worksite_workers],
+        "SECONDARY_ENTITY": [secondary_entity],
         "H_1B_DEPENDENT": [h1b_dependent],
         "WILLFUL_VIOLATOR": [willful_violator],
         "pw_oes_period_group": [pw_oes_period_group],
@@ -419,54 +565,33 @@ if submitted:
         "employment_duration_days": [employment_duration_days]
     })
 
-    # Columnas categóricas según la estructura final del dataset.
-    categorical_cols = [
-        "VISA_CLASS",
-        "FULL_TIME_POSITION",
-        "EMPLOYER_STATE",
-        "NAICS_CODE",
-        "SECONDARY_ENTITY",
-        "WORKSITE_CITY",
-        "WORKSITE_STATE",
-        "PW_WAGE_LEVEL",
-        "H_1B_DEPENDENT",
-        "WILLFUL_VIOLATOR",
-        "pw_oes_period_group",
-        "soc_code_grouped",
-        "received_year"
-    ]
-
-    # Columnas numéricas según la estructura final del dataset.
     numeric_cols = [
-        "NEW_EMPLOYMENT",
-        "WORKSITE_WORKERS",
         "PREVAILING_WAGE",
+        "NEW_EMPLOYMENT",
         "TOTAL_WORKSITE_LOCATIONS",
+        "WORKSITE_WORKERS",
         "process_duration_days",
         "employment_duration_days"
     ]
 
-    # Se respetan los tipos de datos usados en el dataset final.
-    for col in categorical_cols:
-        input_data[col] = input_data[col].astype("category")
-
-    for col in numeric_cols:
-        input_data[col] = pd.to_numeric(input_data[col], errors="coerce")
-
     try:
-        prediction = model.predict(input_data)[0]
+        for col in model_categorical_cols:
+            if col in input_data.columns:
+                input_data[col] = input_data[col].astype("category")
 
-        st.success("✅ Predicción generada correctamente")
+        for col in numeric_cols:
+            if col in input_data.columns:
+                input_data[col] = pd.to_numeric(input_data[col], errors="coerce")
 
-        st.markdown("### Resultado estimado")
+        input_data = input_data[feature_names]
 
-        st.metric(
-            label="Salario anual promedio ofrecido estimado",
-            value=f"${prediction:,.2f} USD"
-        )
+        # El modelo predice el salario en escala logarítmica.
+        # np.expm1 revierte la transformación log1p aplicada durante el entrenamiento.
+        prediction_log = model.predict(input_data)[0]
+        prediction = np.expm1(prediction_log)
 
-        st.markdown("### Datos enviados al modelo")
-        st.dataframe(input_data, use_container_width=True)
+        st.session_state.prediction_result = float(prediction)
+        st.session_state.last_input_data = input_data.copy()
 
     except Exception as e:
         st.error("Ocurrió un error al generar la predicción.")
@@ -475,27 +600,60 @@ if submitted:
 
 
 # ============================================================
+# RESULTADOS
+# ============================================================
+
+if st.session_state.prediction_result is not None:
+    st.success("Predicción generada correctamente")
+
+    _, result_col, _ = st.columns([1.25, 1.5, 1.25])
+    with result_col:
+        st.markdown("<div class='result-title'>Resultado estimado</div>", unsafe_allow_html=True)
+
+        st.metric(
+            label="Salario anual promedio ofrecido estimado",
+            value=f"${st.session_state.prediction_result:,.2f} USD"
+        )
+
+    input_display = (
+        st.session_state.last_input_data
+        .iloc[0]
+        .astype(str)
+        .reset_index()
+    )
+    input_display.columns = ["Variable", "Valor"]
+
+    _, data_col, _ = st.columns([1.2, 1.6, 1.2])
+    with data_col:
+        st.markdown("<div class='result-title'>Datos enviados al modelo</div>", unsafe_allow_html=True)
+
+        st.dataframe(
+            input_display,
+            use_container_width=True,
+            hide_index=True,
+            height=430
+        )
+
+        _, reset_col, _ = st.columns([1, 1.1, 1])
+        with reset_col:
+            st.button(
+                "Generar nueva predicción",
+                on_click=reset_prediction,
+                use_container_width=True
+            )
+
+
+# ============================================================
 # PIE DE PÁGINA
 # ============================================================
 
 st.divider()
 
-st.markdown("""
-<div style='text-align: justify; color: #808080; font-size: 0.85em; padding: 14px; border-radius: 8px; background-color: rgba(128, 128, 128, 0.1);'>
-
-<strong>Nota sobre el alcance del modelo predictivo:</strong><br><br>
-
-Las estimaciones salariales presentadas por esta aplicación son generadas mediante un modelo de Machine Learning entrenado con datos históricos de solicitudes laborales.
-Por lo tanto, el resultado debe interpretarse como una aproximación estadística y no como un valor definitivo o garantizado.
-
-<br><br>
-
-El modelo puede presentar márgenes de error, especialmente cuando recibe combinaciones de datos poco frecuentes, valores atípicos o escenarios distintos a los observados durante su entrenamiento.
-Factores externos como cambios del mercado laboral, condiciones económicas, políticas migratorias, características específicas de la empresa contratante u otros elementos no incluidos en el dataset pueden influir en el salario real ofrecido.
-
-<br><br>
-
-Esta herramienta fue desarrollada con fines académicos y de apoyo analítico dentro de un proyecto de Ciencia de Datos. No constituye asesoramiento financiero, laboral ni legal.
-
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <div class="footer-note">
+        Este modelo entrega una estimación basada en datos históricos de solicitudes laborales H-1B/LCA. El resultado no debe interpretarse como un valor definitivo, ya que puede variar por factores externos, condiciones del mercado laboral o características específicas no incluidas en el entrenamiento. Esta aplicación fue desarrollada con fines académicos y de apoyo analítico.
+    </div>
+    """,
+    unsafe_allow_html=True
+)
